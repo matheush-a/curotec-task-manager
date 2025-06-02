@@ -2,28 +2,42 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Task;
+use App\Services\TaskService;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
+use Inertia\Inertia;
 
 class TaskController extends Controller
 {
-    protected $task;
+    protected $taskService;
 
-    public function __construct(Task $task)
+    public function __construct(TaskService $taskService)
     {
-        $this->task = $task;
+        $this->taskService = $taskService;
     }
 
-    public function index() 
+    public function index(Request $request)
     {
-        $data = $this->task->index();
+        $tasks = $this->taskService->getFilteredAndSorted($request->all());
 
-        if ($data->isEmpty()) {
-            return response(Response::HTTP_NO_CONTENT);
+        $columns = [
+            'pending' => [],
+            'in_progress' => [],
+            'completed' => [],
+            'on_hold' => [],
+        ];
+
+        foreach ($tasks as $task) {
+            $statusName = strtolower(str_replace(' ', '_', $task->status->name));
+
+            if (array_key_exists($statusName, $columns)) {
+                $columns[$statusName][] = $task;
+            }
         }
 
-        return response(Response::HTTP_OK)->json($data);
+        return Inertia::render('Tasks/Index', [
+            'tasks' => $tasks,
+            'columns' => $columns,
+        ]);
     }
 
     public function store(Request $request)
@@ -36,13 +50,25 @@ class TaskController extends Controller
             'priority' => 'required|string|in:low,medium,high',
         ]);
 
-        $data = $this->task->store($request->all());
+        $this->taskService->store($request->all());
 
-        return response(Response::HTTP_CREATED);
+        return redirect()->route('tasks.index');
     }
 
-    public function update()
+    public function update($id, Request $request)
     {
+        $request->validate([
+            'status_id' => 'required|integer|exists:status,id',
+        ]);
 
+        $this->taskService->update($request, $id);
+        return redirect()->route('tasks.index');
+    }
+
+    public function destroy($id)
+    {
+        $this->taskService->delete($id);
+
+        return redirect()->route('tasks.index');
     }
 }
